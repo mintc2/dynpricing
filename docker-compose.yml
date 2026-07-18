@@ -4,6 +4,9 @@ services:
     ports:
       - "8080:8080"
 
+  redis:
+    image: redis:7-alpine
+
   interview-dev:
     build: .
     ports:
@@ -12,5 +15,26 @@ services:
       - .:/rails
     environment:
       - RATE_API_URL=http://rate-api:8080
+      - REDIS_URL=redis://redis:6379
+      - RATE_API_TOKEN=${RATE_API_TOKEN}
+      - RATE_API_TIMEOUT_MS=${RATE_API_TIMEOUT_MS:-50}
+      - RATE_CACHE_TTL_SECONDS=${RATE_CACHE_TTL_SECONDS:-300}
     depends_on:
       - rate-api
+      - redis
+      - sidekiq
+
+  sidekiq:
+    build: .
+    command: bundle exec sidekiq
+    volumes:
+      - .:/rails
+    environment:
+      - RATE_API_URL=http://rate-api:8080
+      - REDIS_URL=redis://redis:6379
+      - RATE_API_TOKEN=${RATE_API_TOKEN}
+      - RATE_API_TIMEOUT_MS=${RATE_API_TIMEOUT_MS:-50}
+      - RATE_CACHE_TTL_SECONDS=${RATE_CACHE_TTL_SECONDS:-300}
+    depends_on:
+      - rate-api
+      - redis
