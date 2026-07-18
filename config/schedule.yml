@@ -1,0 +1,3 @@
+rate_refresh:
+  cron: "*/2 * * * *"
+  class: "RateRefreshJob"
