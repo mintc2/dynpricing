@@ -1,45 +1,46 @@
 require "test_helper"
 
 class Api::V1::PricingControllerTest < ActionDispatch::IntegrationTest
-  test "should get pricing with all parameters" do
-    mock_body = {
-      'rates' => [
-        { 'period' => 'Summer', 'hotel' => 'FloatingPointResort', 'room' => 'SingletonRoom', 'rate' => '15000' }
-      ]
-    }.to_json
-
-    mock_response = OpenStruct.new(success?: true, body: mock_body)
-
-    RateApiClient.stub(:get_rate, mock_response) do
-      get api_v1_pricing_url, params: {
-        period: "Summer",
-        hotel: "FloatingPointResort",
-        room: "SingletonRoom"
-      }
+  test "returns the cached rate on a cache hit" do
+    RateCache.stub(:read, "15000") do
+      get api_v1_pricing_url, params: valid_params
 
       assert_response :success
       assert_equal "application/json", @response.media_type
-
-      json_response = JSON.parse(@response.body)
-      assert_equal "15000", json_response["rate"]
+      assert_equal "15000", JSON.parse(@response.body)["rate"]
     end
   end
 
-  test "should return error when rate API fails" do
-    mock_response = OpenStruct.new(success?: false, body: { 'error' => 'Rate not found' })
+  test "returns a safe 503 response on a cache miss" do
+    RateCache.stub(:read, nil) do
+      get api_v1_pricing_url, params: valid_params
 
-    RateApiClient.stub(:get_rate, mock_response) do
-      get api_v1_pricing_url, params: {
-        period: "Summer",
-        hotel: "FloatingPointResort",
-        room: "SingletonRoom"
-      }
+      assert_response :service_unavailable
+      assert_safe_pricing_error
+    end
+  end
 
-      assert_response :bad_request
-      assert_equal "application/json", @response.media_type
+  test "returns a safe 500 response when the cache is unavailable" do
+    unavailable = ->(**) { raise RateCache::UnavailableError.new(StandardError.new("redis.internal:6379")) }
 
-      json_response = JSON.parse(@response.body)
-      assert_includes json_response["error"], "Rate not found"
+    RateCache.stub(:read, unavailable) do
+      get api_v1_pricing_url, params: valid_params
+
+      assert_response :internal_server_error
+      assert_safe_pricing_error
+    end
+  end
+
+  test "returns a generic 500 response for unexpected errors" do
+    RateCache.stub(:read, ->(**) { raise StandardError, "rate-api.internal token=secret" }) do
+      get api_v1_pricing_url, params: valid_params
+
+      assert_response :internal_server_error
+      error = JSON.parse(@response.body).fetch("error")
+      assert_equal "internal_error", error.fetch("code")
+      assert_equal "An unexpected error occurred. Please try again later.", error.fetch("message")
+      assert_not_includes @response.body, "rate-api.internal"
+      assert_not_includes @response.body, "secret"
     end
   end
 
@@ -107,5 +108,23 @@ class Api::V1::PricingControllerTest < ActionDispatch::IntegrationTest
 
     json_response = JSON.parse(@response.body)
     assert_includes json_response["error"], "Invalid room"
+  end
+
+  private
+
+  def valid_params
+    {
+      period: "Summer",
+      hotel: "FloatingPointResort",
+      room: "SingletonRoom"
+    }
+  end
+
+  def assert_safe_pricing_error
+    error = JSON.parse(@response.body).fetch("error")
+
+    assert_equal "pricing_unavailable", error.fetch("code")
+    assert_equal "Pricing is temporarily unavailable. Please try again later.", error.fetch("message")
+    assert_not_includes @response.body, "redis.internal"
   end
 end

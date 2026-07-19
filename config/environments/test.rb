@@ -1,4 +1,10 @@
 require "active_support/core_ext/integer/time"
+require "sidekiq/testing"
+
+# Keep test cache and Sidekiq state separate from development/runtime Redis data.
+# TEST_REDIS_URL remains configurable for CI while Docker Compose uses Redis database 1.
+ENV["REDIS_URL"] = ENV.fetch("TEST_REDIS_URL", "redis://redis:6379/1")
+Sidekiq::Testing.fake!
 
 # The test environment is used exclusively to run your application's
 # test suite. You never need to work with it otherwise. Remember that

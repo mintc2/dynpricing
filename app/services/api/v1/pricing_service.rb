@@ -1,20 +1,48 @@
 module Api::V1
   class PricingService < BaseService
-    def initialize(period:, hotel:, room:)
+    def initialize(period:, hotel:, room:, request_id: nil)
       @period = period
       @hotel = hotel
       @room = room
+      @request_id = request_id
     end
 
     def run
-      # TODO: Start to implement here
-      rate = RateApiClient.get_rate(period: @period, hotel: @hotel, room: @room)
-      if rate.success?
-        parsed_rate = JSON.parse(rate.body)
-        @result = parsed_rate['rates'].detect { |r| r['period'] == @period && r['hotel'] == @hotel && r['room'] == @room }&.dig('rate')
+      rate = RateCache.read(period: @period, hotel: @hotel, room: @room)
+
+      if rate
+        @result = rate
+        log_request(:info, outcome: "success", cache: "hit", status: 200)
       else
-        errors << rate.body['error']
+        errors << :cache_miss
+        log_request(:warn, outcome: "pricing_unavailable", cache: "miss", status: 503)
       end
+    rescue RateCache::UnavailableError => error
+      errors << :cache_unavailable
+      log_request(
+        :error,
+        outcome: "cache_unavailable",
+        cache: "unavailable",
+        status: 500,
+        error_class: error.original_error.class.name
+      )
+    end
+
+    private
+
+    def log_request(level, outcome:, cache:, status:, **details)
+      Rails.logger.public_send(
+        level,
+        event: "pricing_request",
+        request_id: @request_id,
+        period: @period,
+        hotel: @hotel,
+        room: @room,
+        outcome: outcome,
+        cache: cache,
+        status: status,
+        **details
+      )
     end
   end
 end

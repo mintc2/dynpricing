@@ -1,7 +1,7 @@
 class Api::V1::PricingController < ApplicationController
-  VALID_PERIODS = %w[Summer Autumn Winter Spring].freeze
-  VALID_HOTELS = %w[FloatingPointResort GitawayHotel RecursionRetreat].freeze
-  VALID_ROOMS = %w[SingletonRoom BooleanTwin RestfulKing].freeze
+  VALID_PERIODS = PricingCatalog::PERIODS
+  VALID_HOTELS = PricingCatalog::HOTELS
+  VALID_ROOMS = PricingCatalog::ROOMS
 
   before_action :validate_params
 
@@ -10,16 +10,35 @@ class Api::V1::PricingController < ApplicationController
     hotel  = params[:hotel]
     room   = params[:room]
 
-    service = Api::V1::PricingService.new(period:, hotel:, room:)
+    service = Api::V1::PricingService.new(period:, hotel:, room:, request_id: request.request_id)
     service.run
     if service.valid?
       render json: { rate: service.result }
+    elsif service.errors.include?(:cache_miss)
+
+      render_pricing_unavailable(status: :service_unavailable)
+    elsif service.errors.include?(:cache_unavailable)
+      # The symbols are derived from the official HTTP reason phrases, with a Ruby-friendly conversion:
+      # 1. Lowercase the phrase
+      # 2. Replace spaces/hyphens with underscores
+      # 3. Convert it to a symbol
+      # 500: Internal Server Error -> :internal_server_error.
+      render_pricing_unavailable(status: :internal_server_error)
     else
-      render json: { error: service.errors.join(', ') }, status: :bad_request
+      render_pricing_unavailable(status: :internal_server_error)
     end
   end
 
   private
+
+  def render_pricing_unavailable(status:)
+    render json: {
+      error: {
+        code: "pricing_unavailable",
+        message: "Pricing is temporarily unavailable. Please try again later."
+      }
+    }, status:
+  end
 
   def validate_params
     # Validate required parameters
