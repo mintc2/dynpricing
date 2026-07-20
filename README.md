@@ -19,8 +19,9 @@ This solution takes advantage of three facts:
 - (2) The number of unique request parameter combinations is tiny: `3x3x4=36`. 
 - (3) All 36 combinations can be requested from the RateAPI in a single call, consuming only 1 request out of the daily quota of 1000 requests.
 
-The background worker (Sidekiq cron job) will be started in a container adjacent to the main app container. 
+The background worker (Sidekiq cron job) will be started in a container adjacent to the main app container.
 It will immediately warm the cache on its startup. Subsequent cache refreshes will happen every 2 minutes, managed by the same worker process.
+Docker Compose starts the worker first, but does not strictly wait for the cache to be ready. Since warming requires one batch request (measured P99 below 5 ms), this window is normally very short. Requests arriving during it receive the same 503 they would receive from a gateway with no ready instance, so additional readiness orchestration is unnecessary.
 The cache refresh job is robust and will exponentially retry on transient errors within the current 2-minute wall-clock slot, stopping with a 1-second safety margin before the next slot. 
 Each slot is atomically claimed in Redis, so duplicate, delayed, or concurrently started jobs for the same slot exit without calling RateAPI. 
 Claims are not released; the next refresh uses a different time slot key. In the unlikely scenario where a refresh is unsuccessful, the following slot gets an independent opportunity before the 5-minute cache TTL expires. 
@@ -53,11 +54,9 @@ client tolerance is just 1 second. Forwarding requests directly to RateAPI won't
 
 # Load test
 
-I decided to do load testing of the final solution to see how much traffic a single instance of the service can handle doing nothing else besides
-reading from the cache.
+I decided to do load testing of the final solution to see how much traffic a single instance of the service can handle doing nothing else besides reading from the cache.
 
-The load testing strategy was to spawn N green threads, where `N=RPS`, and have them concurrently send a request to `api/v1/pricing` with one of the
-36 possible combinations. Here are the results.
+The load testing strategy was to spawn N green threads, where `N=RPS`, and have them concurrently send a request to `api/v1/pricing` with one of the 36 possible combinations. The HTTP client timeout was set to 1 s, and it would re-try on timeout and 5XX codes. Here are the results.
 
 ## 100 RPS
 
@@ -212,13 +211,12 @@ What is done by me:
 
 - Understanding of the task at hand, constraints, and limitations.
 - Planning and formulation of the solution.
-- Splitting the solution into bite-sized chunks to be implemented.
-- Testing plan and test cases.
+- Specification of the core test cases and the final testing.
 - Review of the written code; stylistic improvements and simplification recommendations.
 
 What I will leave to the AI/consult the AI on:
 
 - Enumeration of the existing directory structure.
-- Ruby/Rails conventions, syntax, and library recommendations.
+- Explanation of Ruby/Rails conventions, syntax; library recommendations.
 - Writing of the Ruby code.
 - Additional adversarial code review by a different model to catch things my Ruby-untrained eye can't yet.

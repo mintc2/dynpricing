@@ -23,7 +23,7 @@ module Api::V1
         :error,
         outcome: "cache_unavailable",
         cache: "unavailable",
-        status: 500,
+        status: 503,
         error_class: error.original_error.class.name
       )
     end

@@ -15,15 +15,9 @@ class Api::V1::PricingController < ApplicationController
     if service.valid?
       render json: { rate: service.result }
     elsif service.errors.include?(:cache_miss)
-
       render_pricing_unavailable(status: :service_unavailable)
     elsif service.errors.include?(:cache_unavailable)
-      # The symbols are derived from the official HTTP reason phrases, with a Ruby-friendly conversion:
-      # 1. Lowercase the phrase
-      # 2. Replace spaces/hyphens with underscores
-      # 3. Convert it to a symbol
-      # 500: Internal Server Error -> :internal_server_error.
-      render_pricing_unavailable(status: :internal_server_error)
+      render_pricing_unavailable(status: :service_unavailable)
     else
       render_pricing_unavailable(status: :internal_server_error)
     end

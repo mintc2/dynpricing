@@ -2,12 +2,14 @@ require "test_helper"
 
 class Api::V1::PricingControllerTest < ActionDispatch::IntegrationTest
   test "returns the cached rate on a cache hit" do
-    RateCache.stub(:read, "15000") do
+    RateCache.stub(:read, 15_000) do
       get api_v1_pricing_url, params: valid_params
 
       assert_response :success
       assert_equal "application/json", @response.media_type
-      assert_equal "15000", JSON.parse(@response.body)["rate"]
+      rate = JSON.parse(@response.body)["rate"]
+      assert_equal 15_000, rate
+      assert_instance_of Integer, rate
     end
   end
 
@@ -20,13 +22,13 @@ class Api::V1::PricingControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "returns a safe 500 response when the cache is unavailable" do
+  test "returns a safe 503 response when the cache is unavailable" do
     unavailable = ->(**) { raise RateCache::UnavailableError.new(StandardError.new("redis.internal:6379")) }
 
     RateCache.stub(:read, unavailable) do
       get api_v1_pricing_url, params: valid_params
 
-      assert_response :internal_server_error
+      assert_response :service_unavailable
       assert_safe_pricing_error
     end
   end

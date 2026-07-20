@@ -10,14 +10,14 @@ class Api::V1::PricingServiceTest < ActiveSupport::TestCase
   test "returns the cached rate on a cache hit and emits a structured log" do
     logged_message = nil
 
-    RateCache.stub(:read, "15000") do
+    RateCache.stub(:read, 15_000) do
       Rails.logger.stub(:info, ->(message) { logged_message = message }) do
         service = Api::V1::PricingService.new(**ATTRIBUTES, request_id: "request-123")
 
         service.run
 
         assert_predicate service, :valid?
-        assert_equal "15000", service.result
+        assert_equal 15_000, service.result
         assert_empty service.errors
       end
     end
@@ -73,7 +73,7 @@ class Api::V1::PricingServiceTest < ActiveSupport::TestCase
     assert_equal "pricing_request", logged_message[:event]
     assert_equal "cache_unavailable", logged_message[:outcome]
     assert_equal "unavailable", logged_message[:cache]
-    assert_equal 500, logged_message[:status]
+    assert_equal 503, logged_message[:status]
     assert_equal "Redis::CannotConnectError", logged_message[:error_class]
     assert_not_includes logged_message.inspect, "redis.internal"
     assert_not_includes logged_message.inspect, "secret"

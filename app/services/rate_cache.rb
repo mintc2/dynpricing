@@ -25,17 +25,18 @@ class RateCache
     end
 
     def read(period:, hotel:, room:)
-      redis.get(key(period:, hotel:, room:))
+      cached_rate = redis.get(key(period:, hotel:, room:))
+      cached_rate && JSON.parse(cached_rate)
     rescue Redis::BaseError => error
       raise UnavailableError.new(error)
     end
 
     def write_many(rates)
-      redis.pipelined do |pipeline|
+      redis.multi do |transaction|
         rates.each do |rate|
-          pipeline.set(
+          transaction.set(
             key(period: rate_value(rate, :period), hotel: rate_value(rate, :hotel), room: rate_value(rate, :room)),
-            rate_value(rate, :rate),
+            rate_value(rate, :rate).to_json,
             ex: TTL
           )
         end
